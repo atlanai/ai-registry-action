@@ -2,6 +2,13 @@
 
 This project follows [semantic versioning](https://semver.org/). Within a major version, releases keep documented inputs and outputs compatible, and the moving `v1` tag follows the latest `1.x` release.
 
+## 1.0.1 - 2026-10-27
+
+- A dry run on a branch other than the default branch no longer receives registry tokens, since that branch's manifest is unreviewed.
+- A pull request that changes any `registries:` declaration gets no registry token, because an added or repointed registry's adapter would run beside the others' credentials.
+- The action refuses a signed aireg release older than 0.1.7, so an old release manifest cannot be replayed.
+- Release tags are pushed by a dedicated GitHub App, which the tag ruleset makes the only actor that can create or move `v*` tags.
+
 ## 1.0.0 - 2026-10-27
 
 ai-registry Action, the GitHub Action for [ai-registry](https://github.com/atlanai/ai-registry), previews `aireg publish` on pull requests and publishes on merge, for any registry a `.registry/manifest.yml` declares.

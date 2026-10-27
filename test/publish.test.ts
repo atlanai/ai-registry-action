@@ -158,16 +158,17 @@ describe("runPublish", () => {
   });
 
   describe("with publish off", () => {
-    for (const event of ["push", "workflow_dispatch", "schedule"]) {
-      it(`dry-runs ${event} on any branch and rerun with tokens, writing nothing`, async t => {
+    for (const [event, tokens] of [["push", []], ["workflow_dispatch", []], ["schedule", ["AIREG_TOKEN_ACME", "AIREG_TOKEN_TEAM"]]] as const) {
+      it(`dry-runs ${event} on another branch and rerun, writing nothing and passing tokens only to a schedule`, async t => {
         const run = await publish({
-          t, dryRun: true, answer: DRY_ANSWER, payload: undefined,
+          t, dryRun: true, answer: DRY_ANSWER,
           environment: { GITHUB_EVENT_NAME: event, GITHUB_REF: "refs/heads/feature", GITHUB_RUN_ATTEMPT: "2", "INPUT_GITHUB-TOKEN": "synthetic-github-token" }
         });
         assert.equal(run.error, undefined);
         assert.deepEqual(run.commands.map(command => [command.args, tokensSeen(command)]), [
-          [["publish", "--yes", "--json", "--dry-run"], ["AIREG_TOKEN_ACME", "AIREG_TOKEN_TEAM"]]
+          [["publish", "--yes", "--json", "--dry-run"], tokens]
         ]);
+        assert.equal(run.stdout.join("").includes("::notice title=ai-registry Action::registry tokens are passed only on the default branch, so this dry run ran without them\n"), tokens.length === 0);
         assert.deepEqual(run.github, []);
         assert.equal(run.outputs, [
           `published=${JSON.stringify([entry("review", "0.3.2"), entry("triage", "0.1.0", "agent")])}`,
@@ -180,6 +181,33 @@ describe("runPublish", () => {
         assert.ok(run.stdout.includes("::notice title=ai-registry Action::would publish 2, unchanged 1, skipped 1 (dry run)\n"));
       });
     }
+
+    it("passes registry tokens to a dry run on the default branch", async t => {
+      const run = await publish({ t, dryRun: true, answer: DRY_ANSWER, environment: { GITHUB_EVENT_NAME: "workflow_dispatch" } });
+      assert.equal(run.error, undefined);
+      assert.deepEqual(run.commands.map(tokensSeen), [["AIREG_TOKEN_ACME", "AIREG_TOKEN_TEAM"]]);
+      assert.doesNotMatch(run.stdout.join(""), /registry tokens are passed only/);
+    });
+
+    it("passes no registry token to a dry run whose event names no default branch", async t => {
+      const run = await publish({ t, dryRun: true, answer: DRY_ANSWER, payload: null });
+      assert.equal(run.error, undefined);
+      assert.deepEqual(run.commands.map(tokensSeen), [[]]);
+    });
+
+    it("explains, instead of aireg's sign-in advice, why a dry run off the default branch was refused", async t => {
+      const run = await publish({
+        t, dryRun: true, environment: { GITHUB_REF: "refs/heads/feature" },
+        answer: () => { throw refusal("unauthorized", "auth.json has no session for acme", "Sign in with the desktop app."); }
+      });
+      assert.match(String(run.error), /^Error: this dry run is not on the default branch, so it ran without registry tokens, and the registry needs one; preview the branch in a pull request, or dry-run the default branch$/);
+      assert.match(run.outputs, /status=failed/);
+    });
+
+    it("keeps aireg's refusal for a dry run on the default branch", async t => {
+      const run = await publish({ t, dryRun: true, answer: () => { throw refusal("unauthorized", "Sign in to acme.", "Set AIREG_TOKEN_ACME."); } });
+      assert.match(String(run.error), /Sign in to acme\./);
+    });
 
     it("summarizes what would publish", async t => {
       const run = await publish({ t, dryRun: true, answer: DRY_ANSWER });

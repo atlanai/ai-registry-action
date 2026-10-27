@@ -8,7 +8,7 @@ import type { Environment } from "./action.ts";
 import { declaredRegistries, type Execute, type Registry, runAireg } from "./aireg.ts";
 import {
   BUILT_IN_ADAPTERS, CLI_ARTIFACT_PATH, CLI_DOWNLOAD_TIMEOUT_MS, CLI_MANIFEST_PATH, CLI_ORIGIN, CLI_RELEASE_KEYS,
-  MANIFEST_FILE, MAX_CLI_BYTES, MAX_CLI_MANIFEST_BYTES, RUNTIME_PREFIX, USER_AGENT
+  MANIFEST_FILE, MAX_CLI_BYTES, MAX_CLI_MANIFEST_BYTES, MINIMUM_CLI_VERSION, RUNTIME_PREFIX, USER_AGENT
 } from "./constants.ts";
 import { installEnvironment, listingEnvironment } from "./tokens.ts";
 
@@ -112,8 +112,26 @@ function signedPayload(manifest: Manifest): Buffer {
   }));
 }
 
+/** Orders semantic versions; a prerelease sorts before its release. */
+export function compareVersions(left: string, right: string): number {
+  const parse = (version: string) => {
+    const [core = "", pre] = version.split("-", 2);
+    return { parts: core.split(".").map(Number), pre };
+  };
+  const a = parse(left);
+  const b = parse(right);
+  for (let at = 0; at < 3; at += 1) {
+    const difference = (a.parts[at] ?? 0) - (b.parts[at] ?? 0);
+    if (difference !== 0) return Math.sign(difference);
+  }
+  if (a.pre === b.pre) return 0;
+  if (a.pre === undefined) return 1;
+  if (b.pre === undefined) return -1;
+  return a.pre < b.pre ? -1 : 1;
+}
+
 /** The stable release, once a pinned key has signed it; a bad signature from a pinned key is never outweighed by a good one. */
-export function verifyRelease(raw: Buffer, keys: Readonly<Record<string, string>> = CLI_RELEASE_KEYS): Release {
+export function verifyRelease(raw: Buffer, keys: Readonly<Record<string, string>> = CLI_RELEASE_KEYS, minimum = MINIMUM_CLI_VERSION): Release {
   const manifest = parseManifest(raw);
   const payload = signedPayload(manifest);
   let trusted = false;
@@ -128,7 +146,11 @@ export function verifyRelease(raw: Buffer, keys: Readonly<Record<string, string>
     trusted = true;
   }
   if (!trusted) throw new Error("aireg's release manifest is not signed by a key this action trusts");
-  return { version: manifest.version as string, artifacts: manifest.artifacts };
+  const version = manifest.version as string;
+  if (compareVersions(version, minimum) < 0) {
+    throw new Error(`aireg's release manifest names ${version}, older than ${minimum}, the oldest this action runs; refusing a possible rollback`);
+  }
+  return { version, artifacts: manifest.artifacts };
 }
 
 /** The platform's binary, held to the exact size and SHA-256 the signed manifest states. */

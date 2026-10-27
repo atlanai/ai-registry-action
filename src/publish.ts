@@ -20,16 +20,20 @@ export interface PublishOptions {
   execute?: Execute;
 }
 
-type PublishFlow = Required<Pick<PublishOptions, "environment" | "dryRun" | "install" | "execute">>;
+type PublishFlow = Required<Pick<PublishOptions, "environment" | "dryRun" | "install" | "execute">> & { trusted: boolean };
 
 const STALE_RERUN_ADVICE = `run ${ACTION_NAME} manually from the default branch instead`;
 
+/** Whether this run is on the default branch, whose manifest was reviewed. GitHub runs schedules only from it. */
+export function onDefaultBranch(environment: Environment, payload: unknown): boolean {
+  if (environment.GITHUB_EVENT_NAME === "schedule") return true;
+  const branch = defaultBranchOf(payload);
+  return branch !== undefined && environment.GITHUB_REF === `refs/heads/${branch}`;
+}
+
 /** Publishing follows only the default branch's reviewed manifest, whatever the workflow's triggers allow. */
 export function assertDefaultBranch(environment: Environment, payload: unknown): void {
-  const branch = defaultBranchOf(payload);
-  if (branch === undefined || environment.GITHUB_REF !== `refs/heads/${branch}`) {
-    throw new Error(`${ACTION_NAME} publishes only from the repository's default branch`);
-  }
+  if (!onDefaultBranch(environment, payload)) throw new Error(`${ACTION_NAME} publishes only from the repository's default branch`);
 }
 
 /** Refuses a rerun whose commit is not the default branch's tip, so older artifacts cannot overwrite newer ones. */
@@ -82,8 +86,13 @@ export async function reportPublishFailure(environment: Environment, payload: un
 
 type PublishRun = { version: string; result: PublishResult } | { version: string; failure: AiregRefusal };
 
-async function publishOnce({ environment, dryRun, install, execute }: PublishFlow): Promise<PublishRun> {
-  const tokens = suppliedTokens(environment);
+async function publishOnce({ environment, dryRun, install, execute, trusted }: PublishFlow): Promise<PublishRun> {
+  const supplied = suppliedTokens(environment);
+  // Another branch's manifest is unreviewed, so it could point a registry's name, and its token, anywhere.
+  const tokens = trusted ? supplied : {};
+  if (!trusted && Object.keys(supplied).length > 0) {
+    annotate("notice", ACTION_NAME, "registry tokens are passed only on the default branch, so this dry run ran without them");
+  }
   const cwd = resolveWorkingDirectory(environment);
   assertManifest(cwd);
   const { binary, directory, version } = await install({ environment, cwd });
@@ -113,7 +122,13 @@ async function publishWithOutputs(options: PublishFlow): Promise<void> {
   setPublishOutputs(environment, "result" in run ? run.result : undefined);
   setOutput(environment, "status", "failure" in run ? "failed" : "success");
   setOutput(environment, "aireg-version", run.version);
-  if ("failure" in run) throw run.failure;
+  if ("failure" in run) {
+    // aireg's own answer here is how to sign in on a workstation, which would mislead on a runner.
+    if (!options.trusted && run.failure.reason.code === "unauthorized") {
+      throw new Error("this dry run is not on the default branch, so it ran without registry tokens, and the registry needs one; preview the branch in a pull request, or dry-run the default branch");
+    }
+    throw run.failure;
+  }
   writeStepSummary(environment, formatPublishSummary(run, environment));
   const { published, unchanged } = exportChanges(run.result);
   const counts = `${published.length}, unchanged ${unchanged.length}, skipped ${run.result.skipped.length}`;
@@ -128,7 +143,7 @@ export async function runPublish({
     await assertCurrentRerun(environment, payload, request);
   }
   try {
-    await publishWithOutputs({ environment, dryRun, install, execute });
+    await publishWithOutputs({ environment, dryRun, install, execute, trusted: onDefaultBranch(environment, payload) });
   } catch (error) {
     if (!dryRun && environment.GITHUB_EVENT_NAME === "push") await reportPublishFailure(environment, payload, error, request);
     throw error;

@@ -74,6 +74,8 @@ const CLI_ARTIFACT_PATH = "/artifacts/v";
 const CLI_RELEASE_KEYS = Object.freeze({
     "aireg-prod-2026-10-v1": "85sNSOExag/SLliAuZPWqrYqFuGeIaqZbNa9v7mBCHU="
 });
+// The oldest aireg this action runs; a validly signed older manifest could be replayed to install a fixed bug again.
+const MINIMUM_CLI_VERSION = "0.1.7";
 const CLI_DOWNLOAD_TIMEOUT_MS = 60_000;
 const BUILT_IN_ADAPTERS = Object.freeze(["git", "local", "well-known"]);
 const MAX_CLI_BYTES = 192 * 1024 * 1024;
@@ -305,24 +307,19 @@ function secretsOf(environment) {
 function redact(text, environment) {
     return secretsOf(environment).reduce((plain, secret) => plain.replaceAll(secret, "***"), String(text));
 }
-/** Keeps a token only when every registry reading it is declared the same in head and base, so a pull request cannot
- *  repoint a credential or collide aliases onto it. An unreadable base (`undefined`) keeps none. */
+/** Keeps tokens only when the pull request declares `registries:` exactly as its base does. Any change withholds every
+ *  token, because a registry the pull request adds or repoints runs its adapter beside the others' credentials. An
+ *  unreadable base (`undefined`) keeps none. */
 function unchangedRegistryTokens(tokens, head, base) {
-    const kept = {};
-    const withheld = new Set();
     const declared = (list) => JSON.stringify(list.map(entry => [entry.registry, entry.declaration]).sort());
-    for (const [name, value] of Object.entries(tokens)) {
-        const reading = (list) => list.filter(entry => tokenVariable(entry.registry) === name);
-        const after = reading(head);
-        if (after.length === 0)
-            continue;
-        if (base !== undefined && declared(after) === declared(reading(base)))
-            kept[name] = value;
-        else
-            for (const entry of after)
-                withheld.add(entry.registry);
+    const reading = head.filter(entry => Object.hasOwn(tokens, tokenVariable(entry.registry)));
+    if (base === undefined || declared(head) !== declared(base)) {
+        return { tokens: {}, withheld: [...new Set(reading.map(entry => entry.registry))].sort() };
     }
-    return { tokens: kept, withheld: [...withheld].sort() };
+    const kept = {};
+    for (const entry of reading)
+        kept[tokenVariable(entry.registry)] = tokens[tokenVariable(entry.registry)];
+    return { tokens: kept, withheld: [] };
 }
 
 ;// CONCATENATED MODULE: ./src/aireg.ts
@@ -775,8 +772,29 @@ function signedPayload(manifest) {
         artifacts: manifest.artifacts.map(({ name, sha256, size }) => ({ name, sha256, size }))
     }));
 }
+/** Orders semantic versions; a prerelease sorts before its release. */
+function compareVersions(left, right) {
+    const parse = (version) => {
+        const [core = "", pre] = version.split("-", 2);
+        return { parts: core.split(".").map(Number), pre };
+    };
+    const a = parse(left);
+    const b = parse(right);
+    for (let at = 0; at < 3; at += 1) {
+        const difference = (a.parts[at] ?? 0) - (b.parts[at] ?? 0);
+        if (difference !== 0)
+            return Math.sign(difference);
+    }
+    if (a.pre === b.pre)
+        return 0;
+    if (a.pre === undefined)
+        return 1;
+    if (b.pre === undefined)
+        return -1;
+    return a.pre < b.pre ? -1 : 1;
+}
 /** The stable release, once a pinned key has signed it; a bad signature from a pinned key is never outweighed by a good one. */
-function verifyRelease(raw, keys = CLI_RELEASE_KEYS) {
+function verifyRelease(raw, keys = CLI_RELEASE_KEYS, minimum = MINIMUM_CLI_VERSION) {
     const manifest = parseManifest(raw);
     const payload = signedPayload(manifest);
     let trusted = false;
@@ -793,7 +811,11 @@ function verifyRelease(raw, keys = CLI_RELEASE_KEYS) {
     }
     if (!trusted)
         throw new Error("aireg's release manifest is not signed by a key this action trusts");
-    return { version: manifest.version, artifacts: manifest.artifacts };
+    const version = manifest.version;
+    if (compareVersions(version, minimum) < 0) {
+        throw new Error(`aireg's release manifest names ${version}, older than ${minimum}, the oldest this action runs; refusing a possible rollback`);
+    }
+    return { version, artifacts: manifest.artifacts };
 }
 /** The platform's binary, held to the exact size and SHA-256 the signed manifest states. */
 async function downloadCli(release, target, get) {
@@ -1522,12 +1544,17 @@ const checkoutBase = async ({ cwd, sha, repository, environment, token, git = ru
 
 
 const STALE_RERUN_ADVICE = `run ${ACTION_NAME} manually from the default branch instead`;
+/** Whether this run is on the default branch, whose manifest was reviewed. GitHub runs schedules only from it. */
+function onDefaultBranch(environment, payload) {
+    if (environment.GITHUB_EVENT_NAME === "schedule")
+        return true;
+    const branch = defaultBranchOf(payload);
+    return branch !== undefined && environment.GITHUB_REF === `refs/heads/${branch}`;
+}
 /** Publishing follows only the default branch's reviewed manifest, whatever the workflow's triggers allow. */
 function assertDefaultBranch(environment, payload) {
-    const branch = defaultBranchOf(payload);
-    if (branch === undefined || environment.GITHUB_REF !== `refs/heads/${branch}`) {
+    if (!onDefaultBranch(environment, payload))
         throw new Error(`${ACTION_NAME} publishes only from the repository's default branch`);
-    }
 }
 /** Refuses a rerun whose commit is not the default branch's tip, so older artifacts cannot overwrite newer ones. */
 async function assertCurrentRerun(environment, payload, request) {
@@ -1578,8 +1605,13 @@ async function reportPublishFailure(environment, payload, error, request) {
         annotate("warning", ACTION_NAME, "the failed publish could not be reported on its pull request");
     }
 }
-async function publishOnce({ environment, dryRun, install, execute }) {
-    const tokens = suppliedTokens(environment);
+async function publishOnce({ environment, dryRun, install, execute, trusted }) {
+    const supplied = suppliedTokens(environment);
+    // Another branch's manifest is unreviewed, so it could point a registry's name, and its token, anywhere.
+    const tokens = trusted ? supplied : {};
+    if (!trusted && Object.keys(supplied).length > 0) {
+        annotate("notice", ACTION_NAME, "registry tokens are passed only on the default branch, so this dry run ran without them");
+    }
     const cwd = resolveWorkingDirectory(environment);
     assertManifest(cwd);
     const { binary, directory, version } = await install({ environment, cwd });
@@ -1613,8 +1645,13 @@ async function publishWithOutputs(options) {
     setPublishOutputs(environment, "result" in run ? run.result : undefined);
     setOutput(environment, "status", "failure" in run ? "failed" : "success");
     setOutput(environment, "aireg-version", run.version);
-    if ("failure" in run)
+    if ("failure" in run) {
+        // aireg's own answer here is how to sign in on a workstation, which would mislead on a runner.
+        if (!options.trusted && run.failure.reason.code === "unauthorized") {
+            throw new Error("this dry run is not on the default branch, so it ran without registry tokens, and the registry needs one; preview the branch in a pull request, or dry-run the default branch");
+        }
         throw run.failure;
+    }
     writeStepSummary(environment, formatPublishSummary(run, environment));
     const { published, unchanged } = exportChanges(run.result);
     const counts = `${published.length}, unchanged ${unchanged.length}, skipped ${run.result.skipped.length}`;
@@ -1626,7 +1663,7 @@ async function runPublish({ environment, payload, dryRun, request = githubReques
         await assertCurrentRerun(environment, payload, request);
     }
     try {
-        await publishWithOutputs({ environment, dryRun, install, execute });
+        await publishWithOutputs({ environment, dryRun, install, execute, trusted: onDefaultBranch(environment, payload) });
     }
     catch (error) {
         if (!dryRun && environment.GITHUB_EVENT_NAME === "push")
@@ -1665,7 +1702,7 @@ async function run(environment, { preview, publish } = { preview: runPreview, pu
         return preview({ environment, payload: readEventPayload(environment) });
     }
     if (!publishing)
-        return publish({ environment, dryRun: true });
+        return publish({ environment, payload: readEventPayload(environment), dryRun: true });
     if (event === "schedule") {
         throw new Error("a scheduled run never publishes; remove publish: true from this step so it dry-runs, and publish on push or workflow_dispatch");
     }

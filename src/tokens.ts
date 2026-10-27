@@ -100,18 +100,16 @@ export function redact(text: unknown, environment: Environment): string {
   return secretsOf(environment).reduce((plain, secret) => plain.replaceAll(secret, "***"), String(text));
 }
 
-/** Keeps a token only when every registry reading it is declared the same in head and base, so a pull request cannot
- *  repoint a credential or collide aliases onto it. An unreadable base (`undefined`) keeps none. */
+/** Keeps tokens only when the pull request declares `registries:` exactly as its base does. Any change withholds every
+ *  token, because a registry the pull request adds or repoints runs its adapter beside the others' credentials. An
+ *  unreadable base (`undefined`) keeps none. */
 export function unchangedRegistryTokens(tokens: Tokens, head: readonly Registry[], base: readonly Registry[] | undefined): { tokens: Tokens; withheld: string[] } {
-  const kept: Tokens = {};
-  const withheld = new Set<string>();
   const declared = (list: readonly Registry[]) => JSON.stringify(list.map(entry => [entry.registry, entry.declaration]).sort());
-  for (const [name, value] of Object.entries(tokens)) {
-    const reading = (list: readonly Registry[]) => list.filter(entry => tokenVariable(entry.registry) === name);
-    const after = reading(head);
-    if (after.length === 0) continue;
-    if (base !== undefined && declared(after) === declared(reading(base))) kept[name] = value;
-    else for (const entry of after) withheld.add(entry.registry);
+  const reading = head.filter(entry => Object.hasOwn(tokens, tokenVariable(entry.registry)));
+  if (base === undefined || declared(head) !== declared(base)) {
+    return { tokens: {}, withheld: [...new Set(reading.map(entry => entry.registry))].sort() };
   }
-  return { tokens: kept, withheld: [...withheld].sort() };
+  const kept: Tokens = {};
+  for (const entry of reading) kept[tokenVariable(entry.registry)] = tokens[tokenVariable(entry.registry)] as string;
+  return { tokens: kept, withheld: [] };
 }

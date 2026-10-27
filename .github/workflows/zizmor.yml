@@ -1,17 +1,10 @@
 name: zizmor
 
+# Every pull request runs it, so it can be a required check.
 on:
   pull_request:
-    paths:
-      - ".github/**"
-      - "action.yml"
-      - "examples/**"
   push:
     branches: [main]
-    paths:
-      - ".github/**"
-      - "action.yml"
-      - "examples/**"
   workflow_dispatch:
 
 permissions: {}

@@ -1,6 +1,6 @@
 {
   "name": "ai-registry-action",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "type": "module",
   "description": "GitHub Action that previews ai-registry exports on pull requests and publishes them on merge, with aireg.",

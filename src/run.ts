@@ -31,7 +31,7 @@ export async function run(environment: Environment, { preview, publish }: Flows 
     }
     return preview({ environment, payload: readEventPayload(environment) });
   }
-  if (!publishing) return publish({ environment, dryRun: true });
+  if (!publishing) return publish({ environment, payload: readEventPayload(environment), dryRun: true });
   if (event === "schedule") {
     throw new Error("a scheduled run never publishes; remove publish: true from this step so it dry-runs, and publish on push or workflow_dispatch");
   }

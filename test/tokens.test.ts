@@ -82,14 +82,15 @@ describe("unchangedRegistryTokens", () => {
   const cases: [string, unknown[], unknown[] | undefined, ReturnType<typeof keep>][] = [
     ["keeps tokens whose declarations match in any key order", [acme, team],
       [{ config: { ref: "main" }, adapter: "git", address: team.address, registry: "team" }, acme], { tokens, withheld: [] }],
-    ["withholds the token of a registry the pull request adds", [acme, team], [acme], { tokens: { AIREG_TOKEN_ACME: "synthetic-a" }, withheld: ["team"] }],
-    ["passes no token for a registry the pull request removes", [acme], [acme, team], { tokens: { AIREG_TOKEN_ACME: "synthetic-a" }, withheld: [] }],
-    ["withholds a repointed address", [{ ...acme, address: "https://registry.example" }, team], [acme, team], { tokens: { AIREG_TOKEN_TEAM: "synthetic-t" }, withheld: ["acme"] }],
-    ["withholds a changed adapter", [{ ...acme, adapter: "well-known" }, team], [acme, team], { tokens: { AIREG_TOKEN_TEAM: "synthetic-t" }, withheld: ["acme"] }],
-    ["withholds changed configuration", [{ ...acme, config: { namespace: "other" } }, team], [acme, team], { tokens: { AIREG_TOKEN_TEAM: "synthetic-t" }, withheld: ["acme"] }],
-    ["withholds a removed adapter", [{ ...acme, adapter: undefined }, team], [acme, team], { tokens: { AIREG_TOKEN_TEAM: "synthetic-t" }, withheld: ["acme"] }],
-    ["withholds a token another registry name now collides onto", [acme, team, { ...team, registry: "TEAM" }], [acme, team],
-      { tokens: { AIREG_TOKEN_ACME: "synthetic-a" }, withheld: ["TEAM", "team"] }],
+    ["passes only the tokens of declared registries", [acme], [acme], { tokens: { AIREG_TOKEN_ACME: "synthetic-a" }, withheld: [] }],
+    ["withholds every token when the pull request adds a registry", [acme, team], [acme], { tokens: {}, withheld: ["acme", "team"] }],
+    ["withholds every token when the pull request removes a registry", [acme], [acme, team], { tokens: {}, withheld: ["acme"] }],
+    ["withholds every token when one address is repointed", [{ ...acme, address: "https://registry.example" }, team], [acme, team], { tokens: {}, withheld: ["acme", "team"] }],
+    ["withholds every token when one adapter changes", [{ ...acme, adapter: "well-known" }, team], [acme, team], { tokens: {}, withheld: ["acme", "team"] }],
+    ["withholds every token when one configuration changes", [{ ...acme, config: { namespace: "other" } }, team], [acme, team], { tokens: {}, withheld: ["acme", "team"] }],
+    ["withholds every token when an adapter is removed", [{ ...acme, adapter: undefined }, team], [acme, team], { tokens: {}, withheld: ["acme", "team"] }],
+    ["withholds every token when another registry name collides onto one", [acme, team, { ...team, registry: "TEAM" }], [acme, team],
+      { tokens: {}, withheld: ["TEAM", "acme", "team"] }],
     ["withholds every token when the base declares no registries", [acme, team], [], { tokens: {}, withheld: ["acme", "team"] }],
     ["withholds every token when the base is unreadable", [acme, team], undefined, { tokens: {}, withheld: ["acme", "team"] }]
   ];

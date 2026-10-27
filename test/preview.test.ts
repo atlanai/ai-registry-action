@@ -225,7 +225,7 @@ describe("runPreview", () => {
     assert.equal(run.output, "comment-id=101\npublished=[]\nunchanged=[]\nskipped=[]\nconflict-count=0\nstatus=failed\n");
   });
 
-  describe("withholds a token whose registry the pull request redeclares", () => {
+  describe("withholds every token when the pull request redeclares a registry", () => {
     for (const [change, changed] of [
       ["repoints its source", "acme: { source: https://registry.example, adapter: acme }"],
       ["changes its adapter", "acme: { source: https://registry.example.com, adapter: well-known }"],
@@ -234,8 +234,8 @@ describe("runPreview", () => {
       it(`when it ${change}`, async t => {
         const run = await previewRun(t, { answer: unauthorized, environment: TOKENS, base: declare(ACME, TEAM), manifest: declare(changed, TEAM) });
         assert.equal(run.error, undefined);
-        assert.deepEqual(tokensSeen(run), ["AIREG_TOKEN_TEAM"]);
-        assert.match(run.body, /<h3>⚠️ Not compared with the registry<\/h3>\n<p>No token for <code>acme<\/code>, because this pull request changes <code>registries:<\/code>\.<\/p>\n<p>Once merged, the default branch publishes with these <code>registries:<\/code> and its token, so check them before merging\.<\/p>$/m);
+        assert.deepEqual(tokensSeen(run), []);
+        assert.match(run.body, /<h3>⚠️ Not compared with the registry<\/h3>\n<p>No token for <code>acme<\/code> and <code>team<\/code>, because this pull request changes <code>registries:<\/code>\.<\/p>\n<p>Once merged, the default branch publishes with these <code>registries:<\/code> and its token, so check them before merging\.<\/p>$/m);
         assert.match(run.body, /^<p>📝 <b>This pull request changes the manifest:<\/b> registries: changes <code>acme<\/code>\.<\/p>$/m);
         assert.match(run.output, /status=success/);
       });
@@ -248,17 +248,17 @@ describe("runPreview", () => {
     assert.doesNotMatch(run.body, /registries:|No token for/);
   });
 
-  it("withholds the token of a registry the pull request adds, and warns on a passing preview", async t => {
+  it("withholds every token when the pull request adds a registry, and warns on a passing preview", async t => {
     const run = await previewRun(t, { answer: dryRunOf([]), environment: TOKENS, base: declare(ACME), manifest: declare(ACME, TEAM) });
     assert.equal(run.error, undefined);
-    assert.deepEqual(tokensSeen(run), ["AIREG_TOKEN_ACME"]);
-    assert.match(run.body, /^<p>🔒 No token for <code>team<\/code>, because this pull request changes <code>registries:<\/code>\.<\/p>$/m);
+    assert.deepEqual(tokensSeen(run), []);
+    assert.match(run.body, /^<p>🔒 No token for <code>acme<\/code> and <code>team<\/code>, because this pull request changes <code>registries:<\/code>\.<\/p>$/m);
   });
 
-  it("keeps the tokens of the registries that remain when the pull request removes one", async t => {
+  it("withholds every token when the pull request removes a registry", async t => {
     const run = await previewRun(t, { answer: dryRunOf([]), environment: TOKENS, base: declare(ACME, TEAM), manifest: declare(ACME) });
-    assert.deepEqual(tokensSeen(run), ["AIREG_TOKEN_ACME"]);
-    assert.doesNotMatch(run.body, /No token for/);
+    assert.deepEqual(tokensSeen(run), []);
+    assert.match(run.body, /^<p>🔒 No token for <code>acme<\/code>, because this pull request changes <code>registries:<\/code>\.<\/p>$/m);
     assert.match(run.body, /^<p>📝 <b>This pull request changes the manifest:<\/b> registries: removes <code>team<\/code>\.<\/p>$/m);
   });
 
@@ -324,7 +324,7 @@ describe("runPreview", () => {
   it("notes withheld tokens under a refusal", async t => {
     const run = await previewRun(t, { answer: rejected, environment: TOKENS, base: declare(ACME), manifest: declare(ACME, TEAM) });
     assert.match(run.error?.message ?? "", /its description is empty/);
-    assert.match(run.body, /This check fails until then\.<br><sub>aireg suggests: Add a description\.<\/sub><\/p>\n<p>🔒 No token for <code>team<\/code>, because this pull request changes <code>registries:<\/code>\.<\/p>$/m);
+    assert.match(run.body, /This check fails until then\.<br><sub>aireg suggests: Add a description\.<\/sub><\/p>\n<p>🔒 No token for <code>acme<\/code> and <code>team<\/code>, because this pull request changes <code>registries:<\/code>\.<\/p>$/m);
   });
 
   it("passes no token anywhere when the pull request repoints the only registry", async t => {

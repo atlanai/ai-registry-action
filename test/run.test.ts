@@ -99,10 +99,10 @@ describe("run", () => {
   });
 
   for (const event of ["push", "workflow_dispatch", "schedule"]) {
-    it(`dry-runs ${event} with publish off, without reading the payload`, async t => {
+    it(`dry-runs ${event} with publish off and its event payload, which decides whether tokens pass`, async t => {
       const { ran, outcome, environment } = await route(t, event, "false");
       assert.equal(outcome, undefined);
-      assert.deepEqual(ran, [{ flow: "publish", options: { environment, dryRun: true } }]);
+      assert.deepEqual(ran, [{ flow: "publish", options: { environment, payload: PAYLOAD, dryRun: true } }]);
     });
   }
 

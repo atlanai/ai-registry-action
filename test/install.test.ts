@@ -9,7 +9,7 @@ import { describe, it, type TestContext } from "node:test";
 import type { Command } from "../src/aireg.ts";
 import { CLI_RELEASE_KEYS, GIT_ENVIRONMENT, MAX_CLI_BYTES, SYSTEM_PATH } from "../src/constants.ts";
 import {
-  downloadCli, fetchRelease, type HttpsGet, installCli, type InstallOptions, type Release, resolveCliPlatform, verifyRelease
+  compareVersions, downloadCli, fetchRelease, type HttpsGet, installCli, type InstallOptions, type Release, resolveCliPlatform, verifyRelease
 } from "../src/install.ts";
 import { captureStdout, temporaryDirectory } from "./helpers/action.ts";
 import { registryList } from "./helpers/fixtures.ts";
@@ -62,6 +62,25 @@ describe("verifyRelease", () => {
   it("refuses the real release once any signed field changes", async () => {
     const real = JSON.parse(await readFile(RELEASE_FIXTURE, "utf8")) as Record<string, unknown>;
     assert.throws(() => verifyRelease(Buffer.from(JSON.stringify({ ...real, version: "0.1.8" })), CLI_RELEASE_KEYS), /invalid signature/);
+  });
+
+  describe("refuses a validly signed release older than the minimum version", () => {
+    for (const version of ["0.1.6", "0.0.9", "0.1.7-rc.1"]) {
+      it(version, () => {
+        const key = signer();
+        assert.throws(() => verifyRelease(manifest({ version }, [key]), key.keys, "0.1.7"), /older than 0\.1\.7, the oldest this action runs; refusing a possible rollback/);
+      });
+    }
+  });
+
+  it("accepts the minimum version and anything newer, comparing each part as a number", () => {
+    const key = signer();
+    for (const version of ["0.1.7", "0.1.10", "0.10.0", "1.0.0-rc.1"]) assert.equal(verifyRelease(manifest({ version }, [key]), key.keys, "0.1.7").version, version);
+  });
+
+  it("orders versions, putting a prerelease before its release", () => {
+    assert.deepEqual([compareVersions("0.2.0", "0.10.0"), compareVersions("1.0.0", "1.0.0"), compareVersions("1.0.0-rc.1", "1.0.0"), compareVersions("1.0.0", "1.0.0-rc.1"),
+      compareVersions("1.0.0-rc.1", "1.0.0-rc.2"), compareVersions("1.0.0-rc.2", "1.0.0-rc.1")], [-1, 0, -1, 1, -1, 1]);
   });
 
   it("returns the version and artifacts of a release a trusted key signed", () => {
