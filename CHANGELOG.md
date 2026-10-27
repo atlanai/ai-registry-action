@@ -7,7 +7,7 @@ This project follows [semantic versioning](https://semver.org/). Within a major 
 - A dry run on a branch other than the default branch no longer receives registry tokens, since that branch's manifest is unreviewed.
 - A pull request that changes any `registries:` declaration gets no registry token, because an added or repointed registry's adapter would run beside the others' credentials.
 - The action refuses a signed aireg release older than 0.1.7, so an old release manifest cannot be replayed.
-- Release tags are pushed by a dedicated GitHub App, which the tag ruleset makes the only actor that can create or move `v*` tags.
+- Each release waits for a maintainer's approval before its tags are pushed.
 
 ## 1.0.0 - 2026-10-27
 

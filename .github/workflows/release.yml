@@ -66,30 +66,19 @@ jobs:
     if: needs.detect.outputs.requested == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # The release App's key lives only in this environment, which deploys from main.
     environment: release
     # Job-level, so a burst of ordinary pushes cannot replace a pending release run.
     concurrency:
       group: release-main
       cancel-in-progress: false
     permissions:
-      contents: write  # creates the GitHub release
+      contents: write  # pushes the release tags and creates the GitHub release
     steps:
-      # The tag ruleset lets only this App create or move v* tags, so no collaborator can repoint what @v1 runs.
-      - id: app
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          repositories: ${{ github.event.repository.name }}
-          permission-contents: write
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-          token: ${{ steps.app.outputs.token }}
-          # This job pushes tags with the App's token; it uploads no artifacts.
+          # This job pushes tags; it uploads no artifacts.
           persist-credentials: true
 
       - name: Create immutable and moving tags

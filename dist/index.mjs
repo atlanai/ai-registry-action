@@ -74,7 +74,7 @@ const CLI_ARTIFACT_PATH = "/artifacts/v";
 const CLI_RELEASE_KEYS = Object.freeze({
     "aireg-prod-2026-10-v1": "85sNSOExag/SLliAuZPWqrYqFuGeIaqZbNa9v7mBCHU="
 });
-// The oldest aireg this action runs; a validly signed older manifest could be replayed to install a fixed bug again.
+// An old signed manifest could be replayed to roll aireg back, so older releases are refused.
 const MINIMUM_CLI_VERSION = "0.1.7";
 const CLI_DOWNLOAD_TIMEOUT_MS = 60_000;
 const BUILT_IN_ADAPTERS = Object.freeze(["git", "local", "well-known"]);
@@ -307,9 +307,8 @@ function secretsOf(environment) {
 function redact(text, environment) {
     return secretsOf(environment).reduce((plain, secret) => plain.replaceAll(secret, "***"), String(text));
 }
-/** Keeps tokens only when the pull request declares `registries:` exactly as its base does. Any change withholds every
- *  token, because a registry the pull request adds or repoints runs its adapter beside the others' credentials. An
- *  unreadable base (`undefined`) keeps none. */
+/** Keeps tokens only when `registries:` match the base exactly, since an added or repointed registry's adapter would run
+ *  beside the others' credentials. An unreadable base (`undefined`) keeps none. */
 function unchangedRegistryTokens(tokens, head, base) {
     const declared = (list) => JSON.stringify(list.map(entry => [entry.registry, entry.declaration]).sort());
     const reading = head.filter(entry => Object.hasOwn(tokens, tokenVariable(entry.registry)));
@@ -772,7 +771,7 @@ function signedPayload(manifest) {
         artifacts: manifest.artifacts.map(({ name, sha256, size }) => ({ name, sha256, size }))
     }));
 }
-/** Orders semantic versions; a prerelease sorts before its release. */
+/** A prerelease sorts before its release. */
 function compareVersions(left, right) {
     const parse = (version) => {
         const [core = "", pre] = version.split("-", 2);
@@ -1544,7 +1543,7 @@ const checkoutBase = async ({ cwd, sha, repository, environment, token, git = ru
 
 
 const STALE_RERUN_ADVICE = `run ${ACTION_NAME} manually from the default branch instead`;
-/** Whether this run is on the default branch, whose manifest was reviewed. GitHub runs schedules only from it. */
+/** GitHub runs schedules only from the default branch. */
 function onDefaultBranch(environment, payload) {
     if (environment.GITHUB_EVENT_NAME === "schedule")
         return true;

@@ -64,4 +64,4 @@ The action installs the release that `https://aireg.sh/channels/stable/manifest.
 
 ## Release boundary
 
-Consumers run the git object their `uses:` reference selects. Full commit SHAs are the strongest pin; immutable `vX.Y.Z` tags and the moving `vX` tag are the readable defaults. Only the release workflow, using a GitHub App token from the `release` environment, can create or move `v*` tags; the tag ruleset blocks everyone else. There are no release assets beyond the repository itself, so the reviewed commit and its rebuilt bundle are the release evidence. [CONTRIBUTING.md](../CONTRIBUTING.md#releases) has the release steps.
+Consumers run the git object their `uses:` reference selects. Full commit SHAs are the strongest pin; immutable `vX.Y.Z` tags and the moving `vX` tag are the readable defaults. Each release waits for a maintainer's approval in the `release` environment, and exact `vX.Y.Z` tags can never be updated or deleted. There are no release assets beyond the repository itself, so the reviewed commit and its rebuilt bundle are the release evidence. [CONTRIBUTING.md](../CONTRIBUTING.md#releases) has the release steps.

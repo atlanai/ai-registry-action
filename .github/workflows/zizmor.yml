@@ -1,6 +1,5 @@
 name: zizmor
 
-# Every pull request runs it, so it can be a required check.
 on:
   pull_request:
   push:

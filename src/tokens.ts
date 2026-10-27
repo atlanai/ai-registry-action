@@ -100,9 +100,8 @@ export function redact(text: unknown, environment: Environment): string {
   return secretsOf(environment).reduce((plain, secret) => plain.replaceAll(secret, "***"), String(text));
 }
 
-/** Keeps tokens only when the pull request declares `registries:` exactly as its base does. Any change withholds every
- *  token, because a registry the pull request adds or repoints runs its adapter beside the others' credentials. An
- *  unreadable base (`undefined`) keeps none. */
+/** Keeps tokens only when `registries:` match the base exactly, since an added or repointed registry's adapter would run
+ *  beside the others' credentials. An unreadable base (`undefined`) keeps none. */
 export function unchangedRegistryTokens(tokens: Tokens, head: readonly Registry[], base: readonly Registry[] | undefined): { tokens: Tokens; withheld: string[] } {
   const declared = (list: readonly Registry[]) => JSON.stringify(list.map(entry => [entry.registry, entry.declaration]).sort());
   const reading = head.filter(entry => Object.hasOwn(tokens, tokenVariable(entry.registry)));

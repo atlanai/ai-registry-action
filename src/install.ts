@@ -112,7 +112,7 @@ function signedPayload(manifest: Manifest): Buffer {
   }));
 }
 
-/** Orders semantic versions; a prerelease sorts before its release. */
+/** A prerelease sorts before its release. */
 export function compareVersions(left: string, right: string): number {
   const parse = (version: string) => {
     const [core = "", pre] = version.split("-", 2);

@@ -35,7 +35,7 @@ export const CLI_ARTIFACT_PATH = "/artifacts/v";
 export const CLI_RELEASE_KEYS: Readonly<Record<string, string>> = Object.freeze({
   "aireg-prod-2026-10-v1": "85sNSOExag/SLliAuZPWqrYqFuGeIaqZbNa9v7mBCHU="
 });
-// The oldest aireg this action runs; a validly signed older manifest could be replayed to install a fixed bug again.
+// An old signed manifest could be replayed to roll aireg back, so older releases are refused.
 export const MINIMUM_CLI_VERSION = "0.1.7";
 export const CLI_DOWNLOAD_TIMEOUT_MS = 60_000;
 export const BUILT_IN_ADAPTERS: readonly string[] = Object.freeze(["git", "local", "well-known"]);

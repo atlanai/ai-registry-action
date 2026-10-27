@@ -24,7 +24,7 @@ type PublishFlow = Required<Pick<PublishOptions, "environment" | "dryRun" | "ins
 
 const STALE_RERUN_ADVICE = `run ${ACTION_NAME} manually from the default branch instead`;
 
-/** Whether this run is on the default branch, whose manifest was reviewed. GitHub runs schedules only from it. */
+/** GitHub runs schedules only from the default branch. */
 export function onDefaultBranch(environment: Environment, payload: unknown): boolean {
   if (environment.GITHUB_EVENT_NAME === "schedule") return true;
   const branch = defaultBranchOf(payload);
