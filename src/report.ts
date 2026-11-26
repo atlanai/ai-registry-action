@@ -1,5 +1,5 @@
 import { type Environment, messageOf, runUrl, setOutput } from "./action.ts";
-import { type AiregReason, AiregRefusal, type Artifact, type Changes, type PublishResult, type Skip } from "./aireg.ts";
+import { type AiregReason, AiregRefusal, type Artifact, type Changes, type PublishResult, type Skip, type Withheld } from "./aireg.ts";
 import {
   AI_REGISTRY_URL, ASSETS_URL, CLAUDE_CODE_URL, CODEX_URL, GITHUB_SERVER, MANIFEST_FILE,
   MAX_COMMENT_LISTED_CHANGES, MAX_FAILURE_MESSAGE_CHARS, MAX_FIX_PROMPT_CHARS, MAX_GITHUB_COMMENT_BYTES, MAX_LISTED_CHANGES,
@@ -87,7 +87,9 @@ export function setPublishOutputs(environment: Environment, result?: PublishResu
 const identity = (item: Artifact): string => JSON.stringify([item.registry, item.namespace, item.kind, item.name]);
 
 function registryMoved(head: PublishResult, base: PublishResult, untouched: boolean): Artifact[] {
-  const ahead = new Map(base.artifacts.filter(item => item.from !== null && item.from !== item.version).map(item => [identity(item), item]));
+  // A version the registry holds back, such as one in review, explains the gap without anyone publishing past the base.
+  const ahead = new Map(base.artifacts.filter(item => item.withheld === undefined && item.from !== null && item.from !== item.version)
+    .map(item => [identity(item), item]));
   // Equal digests mean the pull request leaves the artifact as the base has it; without both, assume it changes it.
   const leaves = (item: Artifact, at: Artifact) => item.digest !== undefined && item.digest === at.digest;
   return head.artifacts.filter(item => {
@@ -120,9 +122,17 @@ function changed<T>(verb: string, items: readonly T[], label: (item: T) => strin
   return items.length > 0 ? [`${verb} ${listed(items, label, limit)}`] : [];
 }
 
+const HELD: Readonly<Record<string, string>> = { blocked: "🚫 Blocked", pending_review: "⏳ Pending review", draft: "📝 Draft" };
+
+/** A registry holding its newest version back by status is not the same as not having it. */
+function heldCell({ version, status, reason }: Withheld, out: Format): string {
+  const why = reason === undefined ? "" : `: ${out.cellProse(reason)}`;
+  return `${HELD[status] ?? `⏸️ ${out.cell(status)}`}<br><sub>the registry holds ${out.cellCode(version)}${why}</sub>`;
+}
+
 function changeCell(item: Artifact, dryRun: boolean, mark: string | undefined, deletes: string, out: Format): string {
   if (!exportMoved(item, dryRun)) return "Unchanged";
-  const change = item.from === null ? "🆕 New" : mark ?? "🔄 Update";
+  const change = item.withheld ? heldCell(item.withheld, out) : item.from === null ? "🆕 New" : mark ?? "🔄 Update";
   const removed = item.from === null ? [] : item.filesChanged?.removed ?? [];
   return removed.length > 0 ? `${change}<br><sub>${deletes} ${listed(removed, value => out.cellCode(value), out.limit)}</sub>` : change;
 }
@@ -213,10 +223,13 @@ function footer(version: string | undefined, out: Format): string[] {
   return parts.length > 0 ? ["", `<sub>${parts.join(" · ")}</sub>`] : [];
 }
 
-/** "1 new · 3 updates", counting what moves. */
+/** "1 new · 3 updates · 2 held by the registry", counting what moves. */
 function breakdown(moved: readonly Artifact[]): string {
-  const added = moved.filter(item => item.from === null).length;
-  return [added > 0 ? `${added} new` : "", moved.length - added > 0 ? plural(moved.length - added, "update") : ""].filter(Boolean).join(" · ");
+  const held = moved.filter(item => item.withheld).length;
+  const added = moved.filter(item => !item.withheld && item.from === null).length;
+  const updates = moved.length - held - added;
+  return [added > 0 ? `${added} new` : "", updates > 0 ? plural(updates, "update") : "", held > 0 ? `${held} held by the registry` : ""]
+    .filter(Boolean).join(" · ");
 }
 
 const moving = (result: PublishResult): Artifact[] => result.artifacts.filter(item => exportMoved(item, result.dryRun));

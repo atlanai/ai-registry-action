@@ -126,6 +126,20 @@ exports[`formatPreviewComment and formatPreviewSummary > for a pull request that
 <p>Merging into <code>release/next</code> publishes nothing; only the default branch publishes.</p>
 `;
 
+exports[`formatPreviewComment and formatPreviewSummary > labels and counts the exports a registry holds back apart from new ones 1`] = `
+<!-- aireg-publish-preview -->
+<h3>✅ Ready to merge</h3>
+<p>Merging publishes <b>4 artifacts</b> to <code>acme/engineering</code> · 1 new · 3 held by the registry</p>
+
+<table>
+<tr><th align="left" width="330">Artifact</th><th align="left" width="250">Change</th><th align="left" width="180">Version</th></tr>
+<tr><td><code>triage</code> <sub>skill</sub></td><td>🆕 New</td><td><code>0.1.0</code></td></tr>
+<tr><td><code>lint</code> <sub>skill</sub></td><td>🚫 Blocked<br><sub>the registry holds <code>0.1.0</code>: leaks tokens</sub></td><td><code>0.1.0</code> → <code>0.1.1</code></td></tr>
+<tr><td><code>review</code> <sub>skill</sub></td><td>⏳ Pending review<br><sub>the registry holds <code>0.3.2</code></sub></td><td><code>0.3.1</code> → <code>0.3.3</code></td></tr>
+<tr><td><code>sketch</code> <sub>skill</sub></td><td>⏸️ quarantined<br><sub>the registry holds <code>0.1.0</code></sub></td><td><code>0.1.0</code></td></tr>
+</table>
+`;
+
 exports[`formatPreviewComment and formatPreviewSummary > leaves the table out when even the changed rows exceed the limit, counting the files merging removes 1`] = `
 <!-- aireg-publish-preview -->
 <h3>✅ Ready to merge</h3>

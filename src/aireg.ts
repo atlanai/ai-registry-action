@@ -108,6 +108,14 @@ export interface Artifact {
   dependsOn: { to: string }[];
   filesChanged?: Changes;
   dependsOnChanged?: Pick<Changes, "added" | "removed">;
+  /** The registry's newest version when its status holds it back, such as `blocked`. */
+  withheld?: Withheld;
+}
+
+export interface Withheld {
+  version: string;
+  status: string;
+  reason?: string;
 }
 
 export interface Skip {
@@ -219,12 +227,21 @@ function artifact(value: unknown): Artifact | undefined {
   const dependencies = dependsOn.map(item => object(item)?.to);
   const filesChanged = changeLists(entry.filesChanged, ["added", "changed", "removed"], isStoredPath, MAX_CHANGED_FILES);
   const dependsOnChanged = changeLists(entry.dependsOnChanged, ["added", "removed"], isField, MAX_ARTIFACT_DEPENDENCIES);
-  if (!dependencies.every(isField) || filesChanged === undefined || dependsOnChanged === undefined) return undefined;
+  const held = entry.withheld === undefined ? null : withheld(entry.withheld);
+  if (!dependencies.every(isField) || filesChanged === undefined || dependsOnChanged === undefined || held === undefined) return undefined;
   return {
     name, kind, registry, namespace, from, version, ...(digest === undefined ? {} : { digest }), published,
     dependsOn: dependencies.map(to => ({ to })),
-    ...(filesChanged ? { filesChanged } : {}), ...(dependsOnChanged ? { dependsOnChanged } : {})
+    ...(filesChanged ? { filesChanged } : {}), ...(dependsOnChanged ? { dependsOnChanged } : {}),
+    ...(held ? { withheld: held } : {})
   };
+}
+
+function withheld(value: unknown): Withheld | undefined {
+  const entry = object(value);
+  if (!isField(entry?.version) || !isField(entry.status) || (entry.reason !== undefined && typeof entry.reason !== "string")) return undefined;
+  const reason = entry.reason === undefined ? "" : prose(entry.reason, MAX_SKIP_REASON_CHARS);
+  return { version: entry.version, status: entry.status, ...(reason === "" ? {} : { reason }) };
 }
 
 function skip(value: unknown): Skip | undefined {

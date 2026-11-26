@@ -461,13 +461,22 @@ function artifact(value) {
     const dependencies = dependsOn.map(item => object(item)?.to);
     const filesChanged = changeLists(entry.filesChanged, ["added", "changed", "removed"], isStoredPath, MAX_CHANGED_FILES);
     const dependsOnChanged = changeLists(entry.dependsOnChanged, ["added", "removed"], isField, MAX_ARTIFACT_DEPENDENCIES);
-    if (!dependencies.every(isField) || filesChanged === undefined || dependsOnChanged === undefined)
+    const held = entry.withheld === undefined ? null : withheld(entry.withheld);
+    if (!dependencies.every(isField) || filesChanged === undefined || dependsOnChanged === undefined || held === undefined)
         return undefined;
     return {
         name, kind, registry, namespace, from, version, ...(digest === undefined ? {} : { digest }), published,
         dependsOn: dependencies.map(to => ({ to })),
-        ...(filesChanged ? { filesChanged } : {}), ...(dependsOnChanged ? { dependsOnChanged } : {})
+        ...(filesChanged ? { filesChanged } : {}), ...(dependsOnChanged ? { dependsOnChanged } : {}),
+        ...(held ? { withheld: held } : {})
     };
+}
+function withheld(value) {
+    const entry = object(value);
+    if (!isField(entry?.version) || !isField(entry.status) || (entry.reason !== undefined && typeof entry.reason !== "string"))
+        return undefined;
+    const reason = entry.reason === undefined ? "" : prose(entry.reason, MAX_SKIP_REASON_CHARS);
+    return { version: entry.version, status: entry.status, ...(reason === "" ? {} : { reason }) };
 }
 function skip(value) {
     const entry = object(value);
@@ -903,7 +912,9 @@ function setPublishOutputs(environment, result) {
 }
 const identity = (item) => JSON.stringify([item.registry, item.namespace, item.kind, item.name]);
 function registryMoved(head, base, untouched) {
-    const ahead = new Map(base.artifacts.filter(item => item.from !== null && item.from !== item.version).map(item => [identity(item), item]));
+    // A version the registry holds back, such as one in review, explains the gap without anyone publishing past the base.
+    const ahead = new Map(base.artifacts.filter(item => item.withheld === undefined && item.from !== null && item.from !== item.version)
+        .map(item => [identity(item), item]));
     // Equal digests mean the pull request leaves the artifact as the base has it; without both, assume it changes it.
     const leaves = (item, at) => item.digest !== undefined && item.digest === at.digest;
     return head.artifacts.filter(item => {
@@ -932,10 +943,16 @@ function listed(items, label, limit) {
 function changed(verb, items, label, limit) {
     return items.length > 0 ? [`${verb} ${listed(items, label, limit)}`] : [];
 }
+const HELD = { blocked: "🚫 Blocked", pending_review: "⏳ Pending review", draft: "📝 Draft" };
+/** A registry holding its newest version back by status is not the same as not having it. */
+function heldCell({ version, status, reason }, out) {
+    const why = reason === undefined ? "" : `: ${out.cellProse(reason)}`;
+    return `${HELD[status] ?? `⏸️ ${out.cell(status)}`}<br><sub>the registry holds ${out.cellCode(version)}${why}</sub>`;
+}
 function changeCell(item, dryRun, mark, deletes, out) {
     if (!exportMoved(item, dryRun))
         return "Unchanged";
-    const change = item.from === null ? "🆕 New" : mark ?? "🔄 Update";
+    const change = item.withheld ? heldCell(item.withheld, out) : item.from === null ? "🆕 New" : mark ?? "🔄 Update";
     const removed = item.from === null ? [] : item.filesChanged?.removed ?? [];
     return removed.length > 0 ? `${change}<br><sub>${deletes} ${listed(removed, value => out.cellCode(value), out.limit)}</sub>` : change;
 }
@@ -1005,10 +1022,13 @@ function footer(version, out) {
     const parts = [...(version ? [`aireg ${out.text(version)}`] : []), ...(out.run ? [`[Run log](${out.run})`] : [])];
     return parts.length > 0 ? ["", `<sub>${parts.join(" · ")}</sub>`] : [];
 }
-/** "1 new · 3 updates", counting what moves. */
+/** "1 new · 3 updates · 2 held by the registry", counting what moves. */
 function breakdown(moved) {
-    const added = moved.filter(item => item.from === null).length;
-    return [added > 0 ? `${added} new` : "", moved.length - added > 0 ? plural(moved.length - added, "update") : ""].filter(Boolean).join(" · ");
+    const held = moved.filter(item => item.withheld).length;
+    const added = moved.filter(item => !item.withheld && item.from === null).length;
+    const updates = moved.length - held - added;
+    return [added > 0 ? `${added} new` : "", updates > 0 ? plural(updates, "update") : "", held > 0 ? `${held} held by the registry` : ""]
+        .filter(Boolean).join(" · ");
 }
 const moving = (result) => result.artifacts.filter(item => exportMoved(item, result.dryRun));
 /** The card's rows and what follows it, cut down to fit the layout. */
