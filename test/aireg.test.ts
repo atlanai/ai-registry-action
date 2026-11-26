@@ -242,6 +242,12 @@ describe("dryRunResult", () => {
     assert.deepEqual(read({ filesChanged: { added: ["x".repeat(1024)] } })?.filesChanged?.added, ["x".repeat(1024)]);
   });
 
+  it("keeps a withheld newest version, flattening and capping its reason", () => {
+    assert.deepEqual(read({ withheld: { version: "0.3.1", status: "pending_review" } })?.withheld, { version: "0.3.1", status: "pending_review" });
+    assert.deepEqual(read({ withheld: { version: "0.3.1", status: "blocked", reason: ` leaks\n‮tokens ${"x".repeat(600)}` } })?.withheld,
+      { version: "0.3.1", status: "blocked", reason: `leaks tokens ${"x".repeat(487)}` });
+  });
+
   it("drops change lists that are present but empty", () => {
     assert.deepEqual(read({ filesChanged: { added: [], changed: [], removed: [] }, dependsOnChanged: { added: [], removed: [] } }), exported("review", "0.3.1", "0.3.2"));
   });
@@ -269,7 +275,9 @@ describe("dryRunResult", () => {
     { dependsOn: "engineering/skill/lint@1.0.0" }, { dependsOn: ["engineering/skill/lint@1.0.0"] }, { dependsOn: [{ to: "" }] },
     { dependsOn: Array.from({ length: 101 }, (_, at) => ({ to: `engineering/skill/s${at}@1.0.0` })) },
     { name: "review\u202e" }, { name: "x".repeat(201) }, { kind: 7 }, { registry: "" }, { namespace: undefined }, { version: null },
-    { from: 7 }, { from: "" }, { published: "yes" }
+    { from: 7 }, { from: "" }, { published: "yes" },
+    { withheld: "blocked" }, { withheld: null }, { withheld: { status: "blocked" } }, { withheld: { version: "0.3.1", status: "" } },
+    { withheld: { version: "0.3.1", status: "blocked‮" } }, { withheld: { version: "0.3.1", status: "blocked", reason: 7 } }
   ];
   for (const extra of malformed) {
     it(`refuses an export with ${JSON.stringify(extra).slice(0, 80)}`, () => assert.throws(() => read(extra), UNREADABLE_RESULT));

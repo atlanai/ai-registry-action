@@ -50,6 +50,12 @@ describe("conflictsOf and overwritesOf", () => {
     { name: "the head does not move it", head: exported("review", "0.3.1", "0.3.1"), base: exported("review", "0.3.1", "0.3.2"), conflict: false, overwrite: false },
     { name: "the registry did not move it", head: exported("review", "0.3.1", "0.3.2"), base: exported("review", "0.3.1", "0.3.1"), conflict: false, overwrite: false },
     { name: "the base adds it new", head: exported("review", null, "0.1.0"), base: exported("review", null, "0.1.0"), conflict: false, overwrite: false },
+    {
+      name: "the registry holds a newer version back",
+      head: exported("review", "0.3.1", "0.3.3", digest("a")),
+      base: exported("review", "0.3.1", "0.3.3", { ...digest("a"), withheld: { version: "0.3.2", status: "pending_review" } }),
+      conflict: false, overwrite: false
+    },
     { name: "the base's export is in another namespace", head: exported("review", "0.3.1", "0.3.2"), base: exported("review", "0.3.1", "0.3.2", { namespace: "other" }), conflict: false, overwrite: false }
   ];
   for (const { name, head, base, conflict, overwrite } of cases) {
@@ -120,6 +126,14 @@ describe("formatPreviewComment and formatPreviewSummary", () => {
     })],
     ["warns that merging republishes over a registry change the pull request leaves alone", preview({
       result: dryRun([exported("review", "0.3.1", "0.3.2")]), overwrites: [exported("review", "0.3.1", "0.3.2")]
+    })],
+    ["labels and counts the exports a registry holds back apart from new ones", preview({
+      result: dryRun([
+        exported("triage", null, "0.1.0"),
+        exported("lint", "0.1.0", "0.1.1", { withheld: { version: "0.1.0", status: "blocked", reason: "leaks tokens" } }),
+        exported("review", "0.3.1", "0.3.3", { withheld: { version: "0.3.2", status: "pending_review" } }),
+        exported("sketch", null, "0.1.0", { withheld: { version: "0.1.0", status: "quarantined" } })
+      ])
     })],
     ["calls out a new manifest, registry, target and export changes", preview({
       result: dryRun([exported("review", "0.3.1", "0.3.2"), exported("triage", null, "0.1.0", { kind: "agent" })], { target: { registry: "team", namespace: "platform" } }),

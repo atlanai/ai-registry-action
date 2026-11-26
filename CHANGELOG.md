@@ -2,6 +2,10 @@
 
 This project follows [semantic versioning](https://semver.org/). Within a major version, releases keep documented inputs and outputs compatible, and the moving `v1` tag follows the latest `1.x` release.
 
+## Unreleased
+
+- When aireg reports that a registry holds an artifact's newest version back, such as a blocked one or one in review, the preview labels it by that status instead of "New" or "Update", counts it apart in the summary, and no longer reports it as a conflict or as republished over a newer version.
+
 ## 1.0.1 - 2026-10-27
 
 - A dry run on a branch other than the default branch no longer receives registry tokens, since that branch's manifest is unreviewed.
